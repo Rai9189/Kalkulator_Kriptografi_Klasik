@@ -175,17 +175,26 @@ function detMod26(m) {
   return mod(det, 26);
 }
 
+// FIX: adjugate yang benar — cofactor matrix kemudian di-transpose
+// Cofactor C[i][j] = (-1)^(i+j) * minor(i,j)
+// Adjugate = transpose dari cofactor matrix: adj[j][i] = C[i][j]
 function adjugate(m) {
   const n = m.length;
-  if (n === 2) return [[m[1][1], -m[0][1]], [-m[1][0], m[0][0]]];
-  const adj = [];
+  if (n === 2) {
+    // Untuk 2x2: adj = [[d, -b], [-c, a]]
+    return [[m[1][1], -m[0][1]], [-m[1][0], m[0][0]]];
+  }
+  // Untuk 3x3
+  const adj = Array.from({ length: 3 }, () => Array(3).fill(0));
   for (let i = 0; i < 3; i++) {
-    adj.push([]);
     for (let j = 0; j < 3; j++) {
-      const rows = [0, 1, 2].filter(r => r !== j);
-      const cols = [0, 1, 2].filter(c => c !== i);
-      const minor = [[m[rows[0]][cols[0]], m[rows[0]][cols[1]]], [m[rows[1]][cols[0]], m[rows[1]][cols[1]]]];
-      adj[i].push(((i + j) % 2 === 0 ? 1 : -1) * (minor[0][0] * minor[1][1] - minor[0][1] * minor[1][0]));
+      // Minor: hapus baris i dan kolom j
+      const rows = [0, 1, 2].filter(r => r !== i);
+      const cols = [0, 1, 2].filter(c => c !== j);
+      const minor = m[rows[0]][cols[0]] * m[rows[1]][cols[1]] - m[rows[0]][cols[1]] * m[rows[1]][cols[0]];
+      const cofactor = ((i + j) % 2 === 0 ? 1 : -1) * minor;
+      // Transpose: adj[j][i] = cofactor C[i][j]
+      adj[j][i] = cofactor;
     }
   }
   return adj;
@@ -221,13 +230,13 @@ export function hillDecrypt(text, keyMatrix) {
 // ENIGMA CIPHER
 // ============================================
 const ENIGMA_ROTORS = [
-  { wiring: 'EKMFLGDQVZNTOWYHXUSPAIBRCJ', notch: 'Q' },
-  { wiring: 'AJDKSIRUXBLHWTMCQGZNPYFVOE', notch: 'E' },
-  { wiring: 'BDFHJLCPRTXVZNYEIWGAKMUSQO', notch: 'V' },
-  { wiring: 'ESOVPZJAYQUIRHXLNFTGKDCMWB', notch: 'J' },
-  { wiring: 'VZBRGITYUPSDNHLXAWMJQOFECK', notch: 'Z' },
+  { wiring: 'EKMFLGDQVZNTOWYHXUSPAIBRCJ', notch: 'Q' }, // Rotor I
+  { wiring: 'AJDKSIRUXBLHWTMCQGZNPYFVOE', notch: 'E' }, // Rotor II
+  { wiring: 'BDFHJLCPRTXVZNYEIWGAKMUSQO', notch: 'V' }, // Rotor III
+  { wiring: 'ESOVPZJAYQUIRHXLNFTGKDCMWB', notch: 'J' }, // Rotor IV
+  { wiring: 'VZBRGITYUPSDNHLXAWMJQOFECK', notch: 'Z' }, // Rotor V
 ];
-const REFLECTOR = 'YRUHQSLDPXNGOKMIEBFZCWVJAT';
+const REFLECTOR = 'YRUHQSLDPXNGOKMIEBFZCWVJAT'; // Reflektor B
 
 export function parsePlugboard(str) {
   const plug = {};
@@ -238,12 +247,16 @@ export function parsePlugboard(str) {
   return plug;
 }
 
-function enigmaStep(char, rotorIds, positions) {
+// FIX: Ringstellung (ring setting) sekarang diimplementasikan dengan benar.
+// Ringstellung menggeser wiring relatif terhadap posisi rotor.
+function enigmaStep(char, rotorIds, positions, rings) {
   if (!/[A-Z]/.test(char)) return { char, positions };
   const pos = [...positions];
 
-  // Turnover
-  if (ENIGMA_ROTORS[rotorIds[2]].notch === String.fromCharCode(65 + pos[2])) pos[1] = mod(pos[1] + 1, 26);
+  // Double-stepping: cek notch sebelum step
+  if (ENIGMA_ROTORS[rotorIds[2]].notch === String.fromCharCode(65 + pos[2])) {
+    pos[1] = mod(pos[1] + 1, 26);
+  }
   if (ENIGMA_ROTORS[rotorIds[1]].notch === String.fromCharCode(65 + pos[1])) {
     pos[0] = mod(pos[0] + 1, 26);
     pos[1] = mod(pos[1] + 1, 26);
@@ -251,27 +264,36 @@ function enigmaStep(char, rotorIds, positions) {
   pos[2] = mod(pos[2] + 1, 26);
 
   let c = char.charCodeAt(0) - 65;
+
+  // Maju: kanan → kiri (rotor 2 → 1 → 0)
   for (let i = 2; i >= 0; i--) {
-    const idx = mod(c + pos[i], 26);
-    c = mod(ENIGMA_ROTORS[rotorIds[i]].wiring.charCodeAt(idx) - 65 - pos[i], 26);
+    // Masuk rotor dengan memperhitungkan posisi dan ring setting
+    const idx = mod(c + pos[i] - rings[i], 26);
+    const mapped = ENIGMA_ROTORS[rotorIds[i]].wiring.charCodeAt(idx) - 65;
+    c = mod(mapped - pos[i] + rings[i], 26);
   }
+
+  // Reflektor
   c = REFLECTOR.charCodeAt(c) - 65;
+
+  // Mundur: kiri → kanan (rotor 0 → 1 → 2)
   for (let i = 0; i < 3; i++) {
-    const shifted = mod(c + pos[i], 26);
+    const shifted = mod(c + pos[i] - rings[i], 26);
     const back = ENIGMA_ROTORS[rotorIds[i]].wiring.indexOf(String.fromCharCode(65 + shifted));
-    c = mod(back - pos[i], 26);
+    c = mod(back - pos[i] + rings[i], 26);
   }
+
   return { char: String.fromCharCode(65 + c), positions: pos };
 }
 
-export function enigmaProcess(text, rotorIds, startPositions, plugboard) {
+export function enigmaProcess(text, rotorIds, startPositions, plugboard, ringSettings = [0, 0, 0]) {
   const plug = parsePlugboard(plugboard);
   let positions = [...startPositions];
   let result = '';
   for (const ch of text.toUpperCase()) {
     if (/[A-Z]/.test(ch)) {
       const plugged = plug[ch] || ch;
-      const { char: enc, positions: newPos } = enigmaStep(plugged, rotorIds, positions);
+      const { char: enc, positions: newPos } = enigmaStep(plugged, rotorIds, positions, ringSettings);
       positions = newPos;
       result += plug[enc] || enc;
     } else {

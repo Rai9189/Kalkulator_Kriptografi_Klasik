@@ -30,9 +30,11 @@ export default function EnigmaCipher() {
     setResult('');
     try {
       if (!text.trim()) throw new Error('Teks tidak boleh kosong');
-      const rotorIds      = rotors.map(r => r.type);
+      const rotorIds       = rotors.map(r => r.type);
       const startPositions = rotors.map(r => r.position.charCodeAt(0) - 65);
-      const out = enigmaProcess(text, rotorIds, startPositions, plugboard);
+      // FIX: kirim ringSettings ke enigmaProcess
+      const ringSettings   = rotors.map(r => r.ringstellung.charCodeAt(0) - 65);
+      const out = enigmaProcess(text, rotorIds, startPositions, plugboard, ringSettings);
       setResult(out);
     } catch (e) {
       setError(e.message);
@@ -62,7 +64,7 @@ export default function EnigmaCipher() {
             <strong>Enkripsi = Dekripsi (dengan seting rotor yang sama)</strong>
           </div>
           <div className="info-note">
-            Set posisi awal rotor (A–Z). Plugboard opsional: pasangan huruf dipisah spasi, mis: AB CD EF.
+            Set posisi awal rotor (A–Z) dan ring setting. Plugboard opsional: pasangan huruf dipisah spasi, mis: AB CD EF.
           </div>
         </div>
       </div>
